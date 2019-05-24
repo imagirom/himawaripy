@@ -18,7 +18,7 @@ import time
 import subprocess
 
 import appdirs
-from PIL import Image
+from PIL import Image, ImageDraw
 from dateutil.tz import tzlocal
 
 from .utils import set_background, get_desktop_environment
@@ -97,6 +97,12 @@ def parse_args():
                         default=appdirs.user_cache_dir(appname="himawaripy", appauthor=False))
     parser.add_argument("--dont-change", action="store_true", dest="dont_change", default=False,
                         help="don't change the wallpaper (just download it)")
+    parser.add_argument("-u", "--url", type=str, dest="direct_url", default=None,
+                        help="direct url to load instead of himawari sattelite "
+                             "(e.g. something from https://sdo.gsfc.nasa.gov/assets/img/latest")
+    parser.add_argument("-b", "--black_out_rect", type=str, dest="black_out_rect", default=None,
+                        help="draw a black rectangle on some part of the image. Format: x1,x2,x3,x4 where (x1, x2)"
+                             "and (x3, x4) are pixel coordinates of two corners of the rectangle.")
 
     args = parser.parse_args()
 
@@ -144,35 +150,69 @@ def download(url):
         sys.exit("Could not download '{}'!\n".format(url))
 
 
-def thread_main(args):
-    global counter
-    counter = mp.Value("i", 0)
+def download_image(url):
+    exception = None
 
-    level = args.level  # since we are going to use it a lot of times
+    for i in range(1, 4):  # retry max 3 times
+        try:
+            with urllib.request.urlopen(url) as response:
+                return Image.open(response)
+        except Exception as e:
+            exception = e
+            print("[{}/3] Retrying to download '{}'...".format(i, url))
+            time.sleep(1)
+            pass
 
-    print("Updating...")
+    if exception:
+        raise exception
+    else:
+        sys.exit("Could not download '{}'!\n".format(url))
+
+
+def download_himawari_image(level, offset=0, auto_offset=False, **_):
     latest_json = download("http://himawari8-dl.nict.go.jp/himawari8/img/D531106/latest.json")
     latest = strptime(json.loads(latest_json.decode("utf-8"))["date"], "%Y-%m-%d %H:%M:%S")
 
     print("Latest version: {} GMT.".format(strftime("%Y/%m/%d %H:%M:%S", latest)))
-    requested_time = calculate_time_offset(latest, args.auto_offset, args.offset)
-    if args.auto_offset or args.offset != 10:
+    requested_time = calculate_time_offset(latest, auto_offset, offset)
+    if auto_offset or offset != 10:
         print("Offset version: {} GMT.".format(strftime("%Y/%m/%d %H:%M:%S", requested_time)))
 
     png = Image.new("RGB", (WIDTH * level, HEIGHT * level))
 
     p = mp_dummy.Pool(level * level)
     print("Downloading tiles...")
-    res = p.map(download_chunk, it.product(range(level), range(level), (requested_time,), (args.level,)))
+    res = p.map(download_chunk, it.product(range(level), range(level), (requested_time,), (level,)))
 
     for (x, y, tiledata) in res:
         tile = Image.open(io.BytesIO(tiledata))
         png.paste(tile, (WIDTH * x, HEIGHT * y, WIDTH * (x + 1), HEIGHT * (y + 1)))
 
-    for file in iglob(path.join(args.output_dir, "himawari-*.png")):
+    return png
+
+
+def thread_main(args):
+    global counter
+    counter = mp.Value("i", 0)
+
+    print("Updating...")
+
+    if args.direct_url is None:
+        png = download_himawari_image(**args.__dict__)
+    else:
+        print(f"Attempting to download image from [{args.direct_url}]...")
+        png = download_image(args.direct_url).convert('RGB')
+
+    if args.black_out_rect is not None:
+        draw = ImageDraw.Draw(png)
+        coords = [int(c) for c in args.black_out_rect.split(',')]
+        draw.rectangle(coords, fill="black")
+
+    for file in iglob(path.join(args.output_dir, "himawari*.png")):
         os.remove(file)
 
-    output_file = path.join(args.output_dir, strftime("himawari-%Y%m%dT%H%M%S.png", requested_time))
+    output_file = path.join(args.output_dir,
+                            'himawaripy_{date:%Y-%m-%d_%H:%M:%S}.png'.format(date=datetime.now()))
     print("Saving to '%s'..." % (output_file,))
     os.makedirs(path.dirname(output_file), exist_ok=True)
     png.save(output_file, "PNG")
@@ -192,6 +232,8 @@ def main():
 
     if args.save_battery and is_discharging():
         sys.exit("Discharging!\n")
+    
+    print(f"args: {args}")
 
     main_thread = threading.Thread(target=thread_main, args=(args,), name="himawaripy-main-thread", daemon=True)
     main_thread.start()

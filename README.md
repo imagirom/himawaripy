@@ -30,7 +30,8 @@ near-realtime picture of Earth.
 ```
 usage: himawaripy [-h] [--version] [--auto-offset | -o OFFSET]
                   [-l {4,8,16,20}] [-d DEADLINE] [--save-battery]
-                  [--output-dir OUTPUT_DIR] [--dont-change]
+                  [--output-dir OUTPUT_DIR] [--dont-change] [-u DIRECT_URL]
+                  [-b BLACK_OUT_RECT]
 
 set (near-realtime) picture of Earth as your desktop background
 
@@ -51,6 +52,15 @@ optional arguments:
   --output-dir OUTPUT_DIR
                         directory to save the temporary background image
   --dont-change         don't change the wallpaper (just download it)
+  -u DIRECT_URL, --url DIRECT_URL
+                        direct url to load instead of himawari sattelite (e.g.
+                        something from
+                        https://sdo.gsfc.nasa.gov/assets/img/latest
+  -b BLACK_OUT_RECT, --black_out_rect BLACK_OUT_RECT
+                        draw a black rectangle on some part of the image.
+                        Format: x1,x2,x3,x4 where (x1, x2)and (x3, x4) are
+                        pixel coordinates of two corners of the rectangle.
+
 
 ```
 
@@ -70,6 +80,9 @@ You might use `--save-battery` to disable refreshing while running on battery po
 You might also ask himawaripy to not to change your wallpaper by `--dont-change`
 if you would it to download the image and stop.
 
+Instead of using the himawari sattelite, you can also specify any other website that provides live images of something,
+e.g. near-realtime sun images from [NASA](https://sdo.gsfc.nasa.gov/assets/img/latest/?C=M;O=D). 
+In that case the options `-o -l --auto-offset` will be ignored.
 ### Nitrogen
 If you use nitrogen for setting your wallpaper, you have to enter this in your
 `~/.config/nitrogen/bg-saved.cfg`.
